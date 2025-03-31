@@ -1,5 +1,5 @@
 # ComfyUI Batch Process   
-*A collection of nodes for batch processing text and image workflows in ComfyUI*
+*A collection of nodes for batch processing texts and images in ComfyUI*
 
 ---
 
