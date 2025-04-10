@@ -62,7 +62,7 @@ class ImageBatchSaver:
         extension="png",
         filename_number_padding=4,
         filename_number="end",
-        embeded_workflow=True,  # 默认值改为布尔类型
+        embeded_workflow=True,
         node_id=None,
         prompt=None,
         extra_pnginfo=None,
@@ -76,9 +76,7 @@ class ImageBatchSaver:
         filename_suffix = self._get_first_or_default(filename_suffix, "")
         filename_suffix = filename_suffix.strip("'[]")
         filename_number = self._get_first_or_default(filename_number, "end")
-        embeded_workflow = self._get_first_or_default(
-            embeded_workflow, True
-        )  # 改为布尔处理
+        embeded_workflow = self._get_first_or_default(embeded_workflow, True)
 
         # 解析数字位置选项
         counter_start = filename_number in ["start", "start & end"]
@@ -189,7 +187,7 @@ class ImageBatchSaver:
         img_array = np.clip(255.0 * tensor.cpu().numpy(), 0, 255).astype(np.uint8)
         img = Image.fromarray(img_array)
 
-        if embed_workflow:  # 直接使用布尔值判断
+        if embed_workflow:
             if extension.lower() == "webp":
                 exif_data = img.getexif()
                 if prompt is not None:
@@ -261,10 +259,10 @@ class ImageBatchSaver:
     ):
         existing_files = os.listdir(final_output_path)
         pattern_start = re.compile(
-            rf"^(\d{{{padding}}}){delimiter}{re.escape(prefix)}{re.escape(suffix)}.*$"
+            rf"^(\d{{{padding}}}){re.escape(delimiter)}{re.escape(prefix)}(?:{re.escape(delimiter)}{re.escape(suffix)})?.*$"
         )
         pattern_end = re.compile(
-            rf"^{re.escape(prefix)}{delimiter}(\d{{{padding}}}){re.escape(suffix)}.*$"
+            rf"^{re.escape(prefix)}(?:{re.escape(delimiter)}{re.escape(suffix)})?{re.escape(delimiter)}(\d{{{padding}}}).*$"
         )
 
         numbers = []
@@ -275,7 +273,12 @@ class ImageBatchSaver:
             elif counter_end and not counter_start:
                 match = pattern_end.match(file_base)
             elif counter_start and counter_end:
-                match = pattern_start.match(file_base) or pattern_end.match(file_base)
+                match_start = pattern_start.match(file_base)
+                match_end = pattern_end.match(file_base)
+                match = match_start or match_end
+                if match_start and match_end:
+                    numbers.extend([int(match_start.group(1)), int(match_end.group(1))])
+                    continue
             else:
                 match = None
             if match:
