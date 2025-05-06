@@ -1,5 +1,5 @@
 [project]
-name = "batch-process"
+name = "comfyui-batch-process"
 description = "A collection of nodes for batch processing texts and images in ComfyUI"
 version = "1.0.1"
 license = {file = "LICENSE"}
