@@ -319,9 +319,3 @@ class ImageBatchLoader:
         except Exception as e:
             print(f"Error checking for changes: {str(e)}")
             return ""
-
-    @classmethod
-    def VALIDATE_INPUTS(cls, directory, **kwargs):
-        if os.path.exists(directory):
-            return True
-        return f'"{directory}" does not exist'
