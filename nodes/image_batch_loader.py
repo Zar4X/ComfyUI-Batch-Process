@@ -24,6 +24,8 @@ class ImageBatchLoader:
         self.current_directory = ""
         self.images = []
         self.search_states = {}
+        self._last_scan_key = None
+        self._all_image_paths = []
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -69,49 +71,46 @@ class ImageBatchLoader:
         }
 
     def set_directory(
-        self, directory, filename_option="filename", search_title="", delimiter="", subfolder=False
+        self,
+        directory,
+        filename_option="filename",
+        search_title="",
+        delimiter="",
+        subfolder=False,
     ):
-        if (
-            directory != self.current_directory
-            or filename_option
-            or search_title
-            or delimiter
-        ):
+        scan_key = (directory, filename_option, search_title, delimiter, subfolder)
+        if scan_key != self._last_scan_key:
             if not os.path.isdir(directory):
                 raise ValueError(
                     f"The provided path '{directory}' is not a valid directory."
                 )
 
-            # Use list_images method to get all images including subfolders
+            # Fast list of all images (no PIL verification)
             all_image_paths = self.list_images(directory, subfolder)
-            
+            self._all_image_paths = all_image_paths
+
             # Extract just the filenames for filtering
             all_images = [os.path.basename(path) for path in all_image_paths]
-            
+
             filtered_images = self.filter_images(
                 directory, all_images, filename_option, search_title, delimiter
             )
 
-            # Reconstruct full paths for filtered images
-            self.images = []
-            for filename in filtered_images:
-                # Find the full path for this filename
-                for full_path in all_image_paths:
-                    if os.path.basename(full_path) == filename:
-                        self.images.append(full_path)
-                        break
-            
+            # Filter full paths in O(n) by basename membership
+            allowed_names = set(filtered_images)
+            self.images = [
+                p for p in all_image_paths if os.path.basename(p) in allowed_names
+            ]
             self.images = sorted(self.images)
-            self.current_directory = directory
 
-            search_key = (directory, filename_option, search_title, delimiter)
-            if search_key not in self.search_states:
-                self.search_states[search_key] = 0
+            self.current_directory = directory
+            self._last_scan_key = scan_key
+
+            if scan_key not in self.search_states:
+                self.search_states[scan_key] = 0
 
             if not self.images:
                 print("No matching image files found in the provided directory.")
-            else:
-                pass
 
     def load_images(self, directory):
         if not os.path.isdir(directory):
@@ -173,30 +172,43 @@ class ImageBatchLoader:
         return filtered_files
 
     @classmethod
-    def list_images(cls, path: str, subfolder: bool = False):
+    def list_images(cls, path: str, subfolder: bool = False, verify: bool = False):
         images = []
-        pattern = "**/*" if subfolder else "*"
 
         if os.path.isfile(path):
             files = [path]
         else:
-            files = sorted(glob.glob(os.path.join(path, pattern), recursive=subfolder))
+            if subfolder:
+                files = []
+                for root, _, filenames in os.walk(path):
+                    for name in filenames:
+                        files.append(os.path.join(root, name))
+            else:
+                try:
+                    files = [
+                        entry.path for entry in os.scandir(path) if entry.is_file()
+                    ]
+                except FileNotFoundError:
+                    files = []
 
-        valid_extensions = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]
+        valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 
-        for filename in files:
-            if os.path.isdir(filename):
-                continue
-            if not any(filename.lower().endswith(ext) for ext in valid_extensions):
-                continue
+        candidate_files = [
+            f for f in files if os.path.splitext(f)[1].lower() in valid_extensions
+        ]
+
+        if not verify:
+            return sorted(candidate_files)
+
+        for filename in candidate_files:
             try:
                 with Image.open(filename) as img:
                     img.verify()
-                    images.append(filename)
-            except (IOError, SyntaxError):
-                pass
-        
-        return images
+                images.append(filename)
+            except Exception:
+                continue
+
+        return sorted(images)
 
     def load_batch_images(
         self,
@@ -210,28 +222,45 @@ class ImageBatchLoader:
         subfolder=False,
         node_id=None,
     ):
-        # Get image count for the output (fast - just counting files)
-        all_images_in_dir = self.list_images(directory, subfolder)
+        # Ensure directory is scanned once and cached
+        self.set_directory(
+            directory, filename_option, search_title, delimiter, subfolder
+        )
+
+        # Use cached listing for count and names
+        all_images_in_dir = self._all_image_paths
         image_count = str(len(all_images_in_dir))
 
         # Only load all images if image_list is True
         if image_list:
-            all_loaded_images = self.load_all_images(directory, subfolder, node_id)
+            all_loaded_images = self.load_all_images(
+                path=directory,
+                subfolder=subfolder,
+                node_id=node_id,
+                filepaths=all_images_in_dir,
+            )
             if all_loaded_images:
-                return all_loaded_images[0], os.path.splitext(os.path.basename(all_images_in_dir[0]))[0], image_count, all_loaded_images
+                return (
+                    all_loaded_images[0],
+                    os.path.splitext(os.path.basename(all_images_in_dir[0]))[0],
+                    image_count,
+                    all_loaded_images,
+                )
             else:
                 return (torch.zeros(1, 64, 64, 3)), "no_images_found", image_count, []
         else:
             # For regular mode, return empty list for image_list output (fast)
             empty_list = []
 
-        # Original functionality - load single image
-        self.set_directory(directory, filename_option, search_title, delimiter, subfolder)
-
         if not self.images:
-            return (torch.zeros(1, 64, 64, 3)), "no_images_found", image_count, empty_list
+            return (
+                (torch.zeros(1, 64, 64, 3)),
+                "no_images_found",
+                image_count,
+                empty_list,
+            )
 
-        search_key = (directory, filename_option, search_title, delimiter)
+        search_key = (directory, filename_option, search_title, delimiter, subfolder)
 
         if mode == "single_image":
             image, filename = self.load_image_by_index(search_key)
@@ -247,16 +276,24 @@ class ImageBatchLoader:
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-    def load_all_images(self, path: str, subfolder: bool = False, node_id: str = None):
-        """Load all images from the directory for the image_list output"""
+    def load_all_images(
+        self,
+        path: str = None,
+        subfolder: bool = False,
+        node_id: str = None,
+        filepaths: list = None,
+    ):
+        """Load all images for the image_list output"""
         images = []
-        filepaths = self.list_images(path, subfolder)
+        if filepaths is None:
+            # Fallback to listing if not provided
+            filepaths = self.list_images(path, subfolder)
 
         for index, image_path in enumerate(filepaths):
             try:
                 img = node_helpers.pillow(Image.open, image_path)
                 img = node_helpers.pillow(ImageOps.exif_transpose, img)
-                
+
                 if img.mode == "I":
                     img = img.point(lambda i: i * (1 / 255))
                 img = img.convert("RGB")
@@ -267,7 +304,8 @@ class ImageBatchLoader:
 
                 if node_id:
                     PromptServer.instance.send_sync(
-                        "progress", {"node": node_id, "max": len(filepaths), "value": index}
+                        "progress",
+                        {"node": node_id, "max": len(filepaths), "value": index},
                     )
             except Exception as e:
                 print(f"Error loading image {image_path}: {str(e)}")
