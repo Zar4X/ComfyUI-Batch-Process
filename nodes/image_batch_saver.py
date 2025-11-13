@@ -13,11 +13,18 @@ class ImageBatchSaver:
     INPUT_IS_LIST = True
     FUNCTION = "save"
     CATEGORY = "Batch Process"
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "file_paths")
+    RETURN_TYPES = ()
+    RETURN_NAMES = ()
     OUTPUT_NODE = True
 
     ALLOWED_EXT = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"]
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # Always execute - return a unique value each time
+        import time
+
+        return time.time()
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -39,7 +46,7 @@ class ImageBatchSaver:
                     {"default": 4, "min": 1, "max": 9, "step": 1},
                 ),
                 "filename_number": (
-                    ["off", "start", "end", "start & end"],
+                    ["off", "start", "end"],
                     {"default": "end"},
                 ),
                 "embeded_workflow": ("BOOLEAN", {"default": True}),
@@ -79,8 +86,8 @@ class ImageBatchSaver:
         embeded_workflow = self._get_first_or_default(embeded_workflow, True)
 
         # 解析数字位置选项
-        counter_start = filename_number in ["start", "start & end"]
-        counter_end = filename_number in ["end", "start & end"]
+        counter_start = filename_number in ["start"]
+        counter_end = filename_number in ["end"]
 
         if extension not in ["png", "jpg", "jpeg", "webp", "bmp", "tiff"]:
             raise ValueError(f"Invalid extension: {extension}")
@@ -108,7 +115,7 @@ class ImageBatchSaver:
             image_count = len(images)
         else:
             images = []
-            image_count = len(contents) if contents is not None else 0
+            image_count = len(contents) if contents is not None else 1
 
         # 处理 output_path
         output_path = self._normalize_input(output_path, image_count)
@@ -159,6 +166,13 @@ class ImageBatchSaver:
                     )
                     saved_files.append(full_path)
                     print(f"Saved image: {full_path}")
+                elif not images:
+                    # 如果没有图像，仍然生成文件路径（可能用于其他用途）
+                    full_path = os.path.join(
+                        final_output_path, f"{base_filename}.{extension}"
+                    )
+                    saved_files.append(full_path)
+                    print(f"Generated path: {full_path}")
 
                 # 保存文本
                 if contents and idx < len(contents):
@@ -175,7 +189,7 @@ class ImageBatchSaver:
 
             self._update_progress(node_id, idx + 1, image_count)
 
-        return (images, saved_files)
+        return ()
 
     def _save_image_tensor(
         self, tensor, path, embed_workflow, prompt, extra_pnginfo, extension
@@ -258,12 +272,21 @@ class ImageBatchSaver:
         final_output_path,
     ):
         existing_files = os.listdir(final_output_path)
-        pattern_start = re.compile(
-            rf"^(\d{{{padding}}}){re.escape(delimiter)}{re.escape(prefix)}(?:{re.escape(delimiter)}{re.escape(suffix)})?.*$"
-        )
-        pattern_end = re.compile(
-            rf"^{re.escape(prefix)}(?:{re.escape(delimiter)}{re.escape(suffix)})?{re.escape(delimiter)}(\d{{{padding}}}).*$"
-        )
+
+        if suffix.strip():
+            pattern_start = re.compile(
+                rf"^(\d+){re.escape(delimiter)}{re.escape(prefix)}{re.escape(delimiter)}{re.escape(suffix)}$"
+            )
+            pattern_end = re.compile(
+                rf"^{re.escape(prefix)}{re.escape(delimiter)}{re.escape(suffix)}{re.escape(delimiter)}(\d+)$"
+            )
+        else:
+            pattern_start = re.compile(
+                rf"^(\d+){re.escape(delimiter)}{re.escape(prefix)}$"
+            )
+            pattern_end = re.compile(
+                rf"^{re.escape(prefix)}{re.escape(delimiter)}(\d+)$"
+            )
 
         numbers = []
         for file in existing_files:
