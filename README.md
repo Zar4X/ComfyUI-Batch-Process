@@ -1,5 +1,7 @@
 # ComfyUI Batch Process
-*A collection of nodes for batch processing texts, images, and LoRAs in ComfyUI*
+*A collection of nodes for batch processing texts, images, videos, and LoRAs in ComfyUI*
+
+---
 
 ## Core Features
 
@@ -11,11 +13,16 @@
 - `image_batch_loader` - Load images with filtering, subfolder search, and list output options
 - `image_batch_saver` - Save images with companion text files and customizable naming
 
+### 🎬 Video Processing
+- `video_batch_saver` - Save videos with customizable formats, codecs, and companion text files
+
 ### 🎨 LoRA Processing
 - `lora_batch_loader` - Load and apply LoRAs with filtering and cycling modes
 
 ### 🏷️ Utilities
 - `simple_image_tagger` - Generate text templates for image batches
+
+---
 
 ## Key Features
 - **File-Based Filtering** - All loaders support filename pattern matching and regex
@@ -23,14 +30,19 @@
 - **LoRA Management** - Batch apply LoRAs with customizable strength settings
 - **Flexible Modes** - Single, incremental, and random loading options
 
+---
+
 ## Installation
 
-1. Clone to your ComfyUI `custom_nodes` directory:
-   ```
-   ComfyUI/custom_nodes/batch-process/
-   ```
+Clone to your ComfyUI `custom_nodes` directory:
 
-2. Restart ComfyUI
+```
+ComfyUI/custom_nodes/batch-process/
+```
+
+Restart ComfyUI
+
+---
 
 ## Nodes Overview
 
@@ -55,6 +67,11 @@ Saves images with companion text files:
 - **Inputs:** Images, text content, output path, naming options
 - **Features:** Custom naming patterns, workflow embedding, progress tracking
 
+### Video Batch Saver
+Saves videos with customizable settings:
+- **Inputs:** Videos, text content, output path, format, codec, naming options
+- **Features:** Multiple formats (MP4, etc.), codec selection, preserves original FPS, companion text files, workflow metadata
+
 ### Text Modify Tool
 Modifies text content programmatically:
 - **Options:** Whole text, prefix, or suffix modification
@@ -65,16 +82,22 @@ Generates text templates for image batches:
 - **Inputs:** Images, text template
 - **Output:** Generated text for each image
 
+---
+
 ## Typical Use Cases
 - Preparing AI training datasets
 - Batch file organization and renaming
 - LoRA experimentation and comparison
 - Asset management workflows
 
+---
+
 ## Requirements
 - ComfyUI
 - Standard ComfyUI dependencies
 
-## License
-This project is provided as-is for the ComfyUI community.
+---
 
+## License
+
+This project is provided as-is for the ComfyUI community.
