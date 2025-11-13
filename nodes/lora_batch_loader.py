@@ -2,9 +2,79 @@ import os
 import random
 import hashlib
 import re
+import sys
+import io
+import logging
+import warnings
+from contextlib import contextmanager
 import folder_paths
 import comfy.utils
 import comfy.lora
+
+
+@contextmanager
+def suppress_comfy_logs():
+    """Temporarily suppress stdout, stderr, logging, and warnings to hide verbose ComfyUI LoRA loading messages"""
+    # Save original states
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    old_logging_level = logging.root.level
+
+    # Also save file descriptors for low-level redirection
+    old_stdout_fd = None
+    old_stderr_fd = None
+    devnull_fd = None
+
+    try:
+        # Suppress Python-level output
+        logging.root.setLevel(logging.CRITICAL + 1)
+        warnings.filterwarnings("ignore")
+
+        # Create a devnull-like object for Python-level redirection
+        devnull = io.StringIO()
+        sys.stdout = devnull
+        sys.stderr = devnull
+
+        # Also redirect OS-level file descriptors (for C extensions, PyTorch, etc.)
+        # This catches output that bypasses Python's sys.stdout/stderr
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+
+            # Duplicate the current stdout/stderr file descriptors
+            old_stdout_fd = os.dup(1)
+            old_stderr_fd = os.dup(2)
+
+            # Open devnull and redirect stdout/stderr to it
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull_fd, 1)  # Redirect stdout (fd 1)
+            os.dup2(devnull_fd, 2)  # Redirect stderr (fd 2)
+        except (OSError, AttributeError):
+            # If OS-level redirection fails, continue with Python-level only
+            pass
+
+        yield
+
+    finally:
+        # Restore Python-level output
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        logging.root.setLevel(old_logging_level)
+        warnings.filterwarnings("default")
+
+        # Restore OS-level file descriptors
+        if old_stdout_fd is not None:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os.dup2(old_stdout_fd, 1)
+                os.dup2(old_stderr_fd, 2)
+                os.close(old_stdout_fd)
+                os.close(old_stderr_fd)
+                if devnull_fd is not None:
+                    os.close(devnull_fd)
+            except (OSError, AttributeError):
+                pass
 
 
 class LoraBatchLoader:
@@ -31,8 +101,8 @@ class LoraBatchLoader:
                 "search_title": ("STRING", {"default": ""}),
                 "delimiter": ("STRING", {"default": ""}),
                 "mode": (
-                    ["single_lora", "incremental_lora", "random"],
-                    {"default": "incremental_lora"},
+                    ["incremental", "random"],
+                    {"default": "incremental"},
                 ),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
                 "filename_option": (
@@ -44,8 +114,14 @@ class LoraBatchLoader:
                         "prefix nor suffix",
                     ],
                 ),
-                "strength_model": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
-                "strength_clip": ("FLOAT", {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01}),
+                "strength_model": (
+                    "FLOAT",
+                    {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01},
+                ),
+                "strength_clip": (
+                    "FLOAT",
+                    {"default": 1.0, "min": -20.0, "max": 20.0, "step": 0.01},
+                ),
             },
         }
 
@@ -150,7 +226,7 @@ class LoraBatchLoader:
         directory,
         search_title="",
         delimiter="",
-        mode="incremental_lora",
+        mode="incremental",
         seed=0,
         filename_option="filename",
         strength_model=1.0,
@@ -164,18 +240,25 @@ class LoraBatchLoader:
 
         search_key = (directory, filename_option, search_title, delimiter)
 
-        if mode == "single_lora":
-            return self.load_lora_by_index(model, clip, search_key, strength_model, strength_clip)
-        elif mode == "incremental_lora":
-            return self.load_lora_by_index(model, clip, search_key, strength_model, strength_clip)
+        if mode == "incremental":
+            return self.load_lora_by_index(
+                model, clip, search_key, strength_model, strength_clip
+            )
         elif mode == "random":
             random.seed(seed)
             rnd_index = random.randint(0, len(self.loras) - 1)
-            return self.load_lora_by_path(model, clip, self.loras[rnd_index], strength_model, strength_clip)
+            print(
+                f"[LoRA Batch Loader] Random mode - Index: {rnd_index + 1}/{len(self.loras)}"
+            )
+            return self.load_lora_by_path(
+                model, clip, self.loras[rnd_index], strength_model, strength_clip
+            )
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-    def load_lora_by_index(self, model, clip, search_key, strength_model, strength_clip):
+    def load_lora_by_index(
+        self, model, clip, search_key, strength_model, strength_clip
+    ):
         if not self.loras:
             print("No LoRAs loaded.")
             return model, clip, "no_loras"
@@ -187,47 +270,54 @@ class LoraBatchLoader:
         file_path = self.loras[current_index]
         self.search_states[search_key] = (current_index + 1) % len(self.loras)
 
-        return self.load_lora_by_path(model, clip, file_path, strength_model, strength_clip)
+        # Print index info for better tracking
+        print(f"[LoRA Batch Loader] Index: {current_index + 1}/{len(self.loras)}")
+        return self.load_lora_by_path(
+            model, clip, file_path, strength_model, strength_clip
+        )
 
     def load_lora_by_path(self, model, clip, path, strength_model, strength_clip):
         try:
             filename = os.path.basename(path)
             # Remove file extension for cleaner filename output
             filename_clean = os.path.splitext(filename)[0]
-            
-            print(f"Loading LoRA: {filename}")
-            
-            # Load the LoRA using ComfyUI's built-in LoRA loading functionality
-            lora = comfy.utils.load_torch_file(path, safe_load=True)
-            
-            # Create key mapping for the LoRA
-            model_lora_keys = comfy.lora.model_lora_keys_unet(model.model)
-            clip_lora_keys = comfy.lora.model_lora_keys_clip(clip.cond_stage_model)
-            
-            # Combine the key mappings
-            key_map = {}
-            key_map.update(model_lora_keys)
-            key_map.update(clip_lora_keys)
-            
-            # Load the LoRA patches
-            loaded = comfy.lora.load_lora(lora, key_map)
-            
-            # Apply LoRA to model
-            new_modelpatcher = model.clone()
-            k = {}
-            for x in loaded:
-                k[x] = loaded[x]
-            new_modelpatcher.add_patches(k, strength_model)
-            
-            # Apply LoRA to clip
-            new_clip = clip.clone()
-            k = {}
-            for x in loaded:
-                k[x] = loaded[x]
-            new_clip.add_patches(k, strength_clip)
-            
+
+            # Print LoRA name every time it's loaded
+            print(f"[LoRA Batch Loader] Loading LoRA: {filename_clean}")
+
+            # Suppress verbose ComfyUI LoRA loading messages
+            with suppress_comfy_logs():
+                # Load the LoRA using ComfyUI's built-in LoRA loading functionality
+                lora = comfy.utils.load_torch_file(path, safe_load=True)
+
+                # Create key mapping for the LoRA
+                model_lora_keys = comfy.lora.model_lora_keys_unet(model.model)
+                clip_lora_keys = comfy.lora.model_lora_keys_clip(clip.cond_stage_model)
+
+                # Combine the key mappings
+                key_map = {}
+                key_map.update(model_lora_keys)
+                key_map.update(clip_lora_keys)
+
+                # Load the LoRA patches (this prints all the verbose messages)
+                loaded = comfy.lora.load_lora(lora, key_map)
+
+                # Apply LoRA to model
+                new_modelpatcher = model.clone()
+                k = {}
+                for x in loaded:
+                    k[x] = loaded[x]
+                new_modelpatcher.add_patches(k, strength_model)
+
+                # Apply LoRA to clip
+                new_clip = clip.clone()
+                k = {}
+                for x in loaded:
+                    k[x] = loaded[x]
+                new_clip.add_patches(k, strength_clip)
+
             return (new_modelpatcher, new_clip, filename_clean)
-            
+
         except Exception as e:
             print(f"Error loading LoRA {path}: {str(e)}")
             return (model, clip, "error_loading_lora")
@@ -242,4 +332,4 @@ class LoraBatchLoader:
             return hashlib.sha256(",".join(paths).encode()).hexdigest()
         except Exception as e:
             print(f"Error checking for changes: {str(e)}")
-            return "" 
+            return ""
