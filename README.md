@@ -19,9 +19,6 @@
 ### 🎨 LoRA Processing
 - `lora_batch_loader` - Load and apply LoRAs with filtering and cycling modes
 
-### 🏷️ Utilities
-- `simple_image_tagger` - Generate text templates for image batches
-
 ---
 
 ## Key Features
@@ -76,11 +73,6 @@ Saves videos with customizable settings:
 Modifies text content programmatically:
 - **Options:** Whole text, prefix, or suffix modification
 - **Operations:** Search/replace, delete operations
-
-### Simple Image Tagger
-Generates text templates for image batches:
-- **Inputs:** Images, text template
-- **Output:** Generated text for each image
 
 ---
 
