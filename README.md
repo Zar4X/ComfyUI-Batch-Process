@@ -69,11 +69,6 @@ Saves videos with customizable settings:
 - **Inputs:** Videos, text content, output path, format, codec, naming options
 - **Features:** Multiple formats (MP4, etc.), codec selection, preserves original FPS, companion text files, workflow metadata
 
-### Text Modify Tool
-Modifies text content programmatically:
-- **Options:** Whole text, prefix, or suffix modification
-- **Operations:** Search/replace, delete operations
-
 ---
 
 ## Typical Use Cases
