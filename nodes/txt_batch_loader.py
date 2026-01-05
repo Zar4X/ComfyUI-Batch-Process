@@ -37,6 +37,26 @@ class TXTBatchLoader:
                         "prefix nor suffix",
                     ],
                 ),
+                "start_index": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 999999,
+                        "step": 1,
+                        "tooltip": "Start index (1-based). Use 0 to start from beginning, or set 1 for first text file, 2 for second text file, etc.",
+                    },
+                ),
+                "end_index": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 999999,
+                        "step": 1,
+                        "tooltip": "End index (inclusive, 1-based). Use 0 to include all remaining text files, or set >0 to limit range (1=first, 2=second, etc.).",
+                    },
+                ),
             },
         }
 
@@ -165,6 +185,10 @@ class TXTBatchLoader:
             print("No txt files loaded.")
             return None, None
 
+        # Initialize search state if it doesn't exist
+        if search_key not in self.search_states:
+            self.search_states[search_key] = 0
+
         current_index = self.search_states[search_key]
         if current_index >= len(self.txt_files):
             current_index = 0
@@ -187,6 +211,8 @@ class TXTBatchLoader:
         mode="incremental_text",
         seed=0,
         filename_option="filename",
+        start_index=0,
+        end_index=0,
     ):
         self.set_directory(
             directory, filename_option, search_title, search_content, delimiter
@@ -195,13 +221,58 @@ class TXTBatchLoader:
         if not self.txt_files:
             return ("", "")
 
+        # Apply index filtering (1-based)
+        filtered_files = self.txt_files
+        if filtered_files:
+            # Convert 1-indexed to 0-indexed: subtract 1 if > 0
+            actual_start = (start_index - 1) if start_index > 0 else 0
+            actual_end = (
+                (end_index - 1) if end_index > 0 else (len(filtered_files) - 1)
+            )
+
+            # Validate and clamp indices
+            if actual_start < 0:
+                actual_start = 0
+            if actual_start >= len(filtered_files):
+                actual_start = (
+                    len(filtered_files) - 1 if len(filtered_files) > 0 else 0
+                )
+
+            if actual_end < 0:
+                actual_end = 0
+            if actual_end >= len(filtered_files):
+                actual_end = len(filtered_files) - 1
+            if actual_end < actual_start:
+                actual_end = actual_start
+
+            # Only apply slicing if we have valid indices and files
+            if len(filtered_files) > 0 and actual_start <= actual_end:
+                # Slice the files list (actual_end+1 because slice is exclusive on end)
+                filtered_files = filtered_files[actual_start : actual_end + 1]
+            else:
+                filtered_files = []
+
+        if not filtered_files:
+            return ("", "")
+
         search_key = (
             directory,
             filename_option,
             search_title,
             search_content,
             delimiter,
+            start_index,
+            end_index,
         )
+
+        # Initialize search state for this key if it doesn't exist
+        if search_key not in self.search_states:
+            self.search_states[search_key] = 0
+
+        # Use filtered_files instead of self.txt_files for operations
+        # Temporarily replace self.txt_files with filtered list for get_next_text
+        original_files = self.txt_files
+        self.txt_files = filtered_files
 
         if mode == "single_text":
             content, filename = self.get_next_text(search_key)
@@ -209,13 +280,18 @@ class TXTBatchLoader:
             content, filename = self.get_next_text(search_key)
         elif mode == "random":
             random.seed(seed)
-            rnd_index = random.randint(0, len(self.txt_files) - 1)
-            file_path = self.txt_files[rnd_index]
+            rnd_index = random.randint(0, len(filtered_files) - 1)
+            file_path = filtered_files[rnd_index]
             with open(file_path, "r", encoding="utf-8") as file:
                 content = file.read()
             filename = os.path.basename(file_path)
         else:
+            # Restore original files list before raising error
+            self.txt_files = original_files
             raise ValueError(f"Unknown mode: {mode}")
+
+        # Restore original files list
+        self.txt_files = original_files
 
         if content:
             print(f"Final output content: {content}")

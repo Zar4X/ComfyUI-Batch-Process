@@ -66,6 +66,26 @@ class ImageBatchLoader:
                         "defaultInput": False,
                     },
                 ),
+                "start_index": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 999999,
+                        "step": 1,
+                        "tooltip": "Start index (1-based). Use 0 to start from beginning, or set 1 for first image, 2 for second image, etc.",
+                    },
+                ),
+                "end_index": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 999999,
+                        "step": 1,
+                        "tooltip": "End index (inclusive, 1-based). Use 0 to include all remaining images, or set >0 to limit range (1=first, 2=second, etc.).",
+                    },
+                ),
             },
             "hidden": {"node_id": "UNIQUE_ID"},
         }
@@ -220,6 +240,8 @@ class ImageBatchLoader:
         filename_option="filename",
         image_list=False,
         subfolder=False,
+        start_index=0,
+        end_index=-1,
         node_id=None,
     ):
         # Ensure directory is scanned once and cached
@@ -231,18 +253,61 @@ class ImageBatchLoader:
         all_images_in_dir = self._all_image_paths
         image_count = str(len(all_images_in_dir))
 
+        # Determine which image list to use for index filtering
+        images_to_filter = self.images if self.images else all_images_in_dir
+
+        # Apply index filtering
+        filtered_images = images_to_filter
+        if filtered_images:
+            # Determine actual start and end indices
+            # start_index is 1-indexed: 1 = first image, 2 = second image, etc.
+            # start_index=0 means start from beginning (index 0)
+            # end_index=0 means end at last image (no limit, use all remaining)
+            # Only non-zero values apply as limits
+            # Convert 1-indexed to 0-indexed: subtract 1 if > 0
+            actual_start = (start_index - 1) if start_index > 0 else 0
+            actual_end = (
+                (end_index - 1) if end_index > 0 else (len(filtered_images) - 1)
+            )
+
+            # Validate indices
+            if actual_start < 0:
+                actual_start = 0
+            if actual_start >= len(filtered_images):
+                actual_start = (
+                    len(filtered_images) - 1 if len(filtered_images) > 0 else 0
+                )
+
+            if actual_end < 0:
+                actual_end = 0
+            if actual_end >= len(filtered_images):
+                actual_end = len(filtered_images) - 1
+            if actual_end < actual_start:
+                actual_end = actual_start
+
+            # Only apply slicing if we have valid indices and images
+            if len(filtered_images) > 0 and actual_start <= actual_end:
+                # Slice the images list (actual_end+1 because slice is exclusive on end)
+                filtered_images = filtered_images[actual_start : actual_end + 1]
+            else:
+                filtered_images = []
+
         # Only load all images if image_list is True
         if image_list:
+            # Check if we have any images to load after filtering
+            if not filtered_images:
+                return (torch.zeros(1, 64, 64, 3)), "no_images_found", image_count, []
+
             all_loaded_images = self.load_all_images(
                 path=directory,
                 subfolder=subfolder,
                 node_id=node_id,
-                filepaths=all_images_in_dir,
+                filepaths=filtered_images,
             )
             if all_loaded_images:
                 return (
                     all_loaded_images[0],
-                    os.path.splitext(os.path.basename(all_images_in_dir[0]))[0],
+                    os.path.splitext(os.path.basename(filtered_images[0]))[0],
                     image_count,
                     all_loaded_images,
                 )
@@ -252,7 +317,7 @@ class ImageBatchLoader:
             # For regular mode, return empty list for image_list output (fast)
             empty_list = []
 
-        if not self.images:
+        if not filtered_images:
             return (
                 (torch.zeros(1, 64, 64, 3)),
                 "no_images_found",
@@ -260,18 +325,26 @@ class ImageBatchLoader:
                 empty_list,
             )
 
-        search_key = (directory, filename_option, search_title, delimiter, subfolder)
+        search_key = (
+            directory,
+            filename_option,
+            search_title,
+            delimiter,
+            subfolder,
+            start_index,
+            end_index,
+        )
 
         if mode == "single_image":
-            image, filename = self.load_image_by_index(search_key)
+            image, filename = self.load_image_by_index(search_key, filtered_images)
             return image, filename, image_count, empty_list
         elif mode == "incremental_image":
-            image, filename = self.load_image_by_index(search_key)
+            image, filename = self.load_image_by_index(search_key, filtered_images)
             return image, filename, image_count, empty_list
         elif mode == "random":
             random.seed(seed)
-            rnd_index = random.randint(0, len(self.images) - 1)
-            image, filename = self.load_image_by_path(self.images[rnd_index])
+            rnd_index = random.randint(0, len(filtered_images) - 1)
+            image, filename = self.load_image_by_path(filtered_images[rnd_index])
             return image, filename, image_count, empty_list
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -313,17 +386,20 @@ class ImageBatchLoader:
 
         return images
 
-    def load_image_by_index(self, search_key):
-        if not self.images:
+    def load_image_by_index(self, search_key, filtered_images):
+        if not filtered_images:
             print("No images loaded.")
             return None, None
 
+        if search_key not in self.search_states:
+            self.search_states[search_key] = 0
+
         current_index = self.search_states[search_key]
-        if current_index >= len(self.images):
+        if current_index >= len(filtered_images):
             current_index = 0
 
-        file_path = self.images[current_index]
-        self.search_states[search_key] = (current_index + 1) % len(self.images)
+        file_path = filtered_images[current_index]
+        self.search_states[search_key] = (current_index + 1) % len(filtered_images)
 
         return self.load_image_by_path(file_path)
 
