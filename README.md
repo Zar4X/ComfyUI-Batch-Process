@@ -10,8 +10,8 @@
 - `text_modify_tool` - Edit text content with search/replace operations on prefixes, suffixes, or whole text
 
 ### 🖼️ Image Processing
-- `image_batch_loader` - Load images with filtering, subfolder search, and list output options
-- `image_batch_saver` - Save images with companion text files and customizable naming
+- `image_batch_loader` - Load images with filtering, subfolder search, index range selection, and list output options
+- `image_batch_saver` - Save images with companion text files, frame accumulation, and customizable naming
 
 ### 🎬 Video Processing
 - `video_batch_saver` - Save videos with customizable formats, codecs, and companion text files
@@ -26,6 +26,9 @@
 - **Training-Ready Outputs** - Maintains image-text relationships for ML datasets
 - **LoRA Management** - Batch apply LoRAs with customizable strength settings
 - **Flexible Modes** - Single, incremental, and random loading options
+- **Memory-Efficient Frame Accumulation** - Append frames to existing files across loop iterations
+- **Index Range Selection** - Select specific frame ranges for loading and saving
+- **Multi-Format Support** - Supports PNG, JPG, GIF, WebP, TIFF, BMP formats
 
 ---
 
@@ -50,24 +53,36 @@ Loads LoRAs from a directory with filtering options:
 - **Outputs:** Modified MODEL, CLIP, filename
 
 ### Image Batch Loader
-Loads images with advanced filtering:
-- **Inputs:** Directory path, search filters, subfolder option, image list toggle
+Loads images with advanced filtering and index range selection:
+- **Inputs:** Directory path, search filters, subfolder option, image list toggle, start_index, end_index
 - **Outputs:** Single image, filename, image count, image list (when enabled)
+- **Features:** 1-based indexing, range selection, incremental/single/random modes
 
 ### TXT Batch Loader
 Loads text files with content and filename filtering:
-- **Inputs:** Directory path, search filters for filename and content
+- **Inputs:** Directory path, search filters for filename and content, start_index, end_index
 - **Outputs:** Text content, filename
+- **Features:** 1-based indexing, range selection
 
 ### Image Batch Saver
-Saves images with companion text files:
-- **Inputs:** Images, text content, output path, naming options
-- **Features:** Custom naming patterns, workflow embedding, progress tracking
+Saves images with companion text files and advanced options:
+- **Inputs:** Images, text content, output path, naming options, append_frames, start_index, end_index
+- **Features:** 
+  - Frame accumulation (append_frames, defaults to false)
+  - Index range selection (1-based)
+  - Multi-format support (PNG, JPG, GIF, WebP, TIFF, BMP)
+  - Auto-converts to GIF when append_frames is enabled with unsupported formats
+  - Custom naming patterns, workflow embedding, progress tracking
 
 ### Video Batch Saver
 Saves videos with customizable settings:
 - **Inputs:** Videos, text content, output path, format, codec, naming options
 - **Features:** Multiple formats (MP4, etc.), codec selection, preserves original FPS, companion text files, workflow metadata
+
+### Text Modify Tool
+Modifies text content programmatically:
+- **Options:** Whole text, prefix, or suffix modification
+- **Operations:** Search/replace, delete operations
 
 ---
 
@@ -76,6 +91,7 @@ Saves videos with customizable settings:
 - Batch file organization and renaming
 - LoRA experimentation and comparison
 - Asset management workflows
+- Memory-efficient video processing with frame accumulation
 
 ---
 
