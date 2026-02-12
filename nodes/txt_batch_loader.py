@@ -14,6 +14,8 @@ class TXTBatchLoader:
         self.current_index = 0
         self.current_directory = ""
         self.search_states = {}
+        # When reset_on_queue value changes (any change), we reset index to 0 for that search_key
+        self._last_reset_on_queue = {}
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -58,6 +60,18 @@ class TXTBatchLoader:
                     },
                 ),
             },
+            "optional": {
+                "reset_on_queue": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 0,
+                        "max": 1,
+                        "step": 1,
+                        "tooltip": "Any change to this value (0↔1) resets the read index to start from the first file again. Keep unchanged during a queue run to advance normally.",
+                    },
+                ),
+            },
         }
 
     def set_directory(
@@ -93,8 +107,17 @@ class TXTBatchLoader:
                 delimiter,
             )
 
+            # Natural sort: 1, 2, 3, ..., 10 instead of 1, 10, 2, 3, ...
+            def _natural_sort_key(path):
+                name = os.path.basename(path)
+                return [
+                    int(part) if part.isdigit() else part.lower()
+                    for part in re.split(r"(\d+)", name)
+                ]
+
             self.txt_files = sorted(
-                [os.path.join(directory, f) for f in filtered_files]
+                [os.path.join(directory, f) for f in filtered_files],
+                key=_natural_sort_key,
             )
 
             self.current_directory = directory
@@ -213,6 +236,7 @@ class TXTBatchLoader:
         filename_option="filename",
         start_index=0,
         end_index=0,
+        reset_on_queue=1,
     ):
         self.set_directory(
             directory, filename_option, search_title, search_content, delimiter
@@ -264,6 +288,11 @@ class TXTBatchLoader:
             start_index,
             end_index,
         )
+
+        # When reset_on_queue value changes (any change), reset index
+        if self._last_reset_on_queue.get(search_key) != reset_on_queue:
+            self.search_states[search_key] = 0
+        self._last_reset_on_queue[search_key] = reset_on_queue
 
         # Initialize search state for this key if it doesn't exist
         if search_key not in self.search_states:

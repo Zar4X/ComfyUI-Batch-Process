@@ -26,6 +26,7 @@ class ImageBatchLoader:
         self.search_states = {}
         self._last_scan_key = None
         self._all_image_paths = []
+        self._last_reset_on_queue = {}
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -87,6 +88,18 @@ class ImageBatchLoader:
                     },
                 ),
             },
+            "optional": {
+                "reset_on_queue": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 0,
+                        "max": 1,
+                        "step": 1,
+                        "tooltip": "Any change to this value (0↔1) resets the read index to start from the first image again. Keep unchanged during a queue run to advance normally.",
+                    },
+                ),
+            },
             "hidden": {"node_id": "UNIQUE_ID"},
         }
 
@@ -121,7 +134,13 @@ class ImageBatchLoader:
             self.images = [
                 p for p in all_image_paths if os.path.basename(p) in allowed_names
             ]
-            self.images = sorted(self.images)
+            self.images = sorted(
+                self.images,
+                key=lambda p: [
+                    int(part) if part.isdigit() else part.lower()
+                    for part in re.split(r"(\d+)", os.path.basename(p))
+                ],
+            )
 
             self.current_directory = directory
             self._last_scan_key = scan_key
@@ -141,7 +160,14 @@ class ImageBatchLoader:
             for f in os.listdir(directory)
             if any(f.endswith(ext) for ext in self.SUPPORTED_EXTENSIONS)
         ]
-        return sorted([os.path.join(directory, f) for f in all_images])
+        paths = [os.path.join(directory, f) for f in all_images]
+        return sorted(
+            paths,
+            key=lambda p: [
+                int(part) if part.isdigit() else part.lower()
+                for part in re.split(r"(\d+)", os.path.basename(p))
+            ],
+        )
 
     def filter_images(self, directory, files, filename_option, search_title, delimiter):
         def get_prefix(filename):
@@ -218,7 +244,13 @@ class ImageBatchLoader:
         ]
 
         if not verify:
-            return sorted(candidate_files)
+            return sorted(
+                candidate_files,
+                key=lambda p: [
+                    int(part) if part.isdigit() else part.lower()
+                    for part in re.split(r"(\d+)", os.path.basename(p))
+                ],
+            )
 
         for filename in candidate_files:
             try:
@@ -228,7 +260,13 @@ class ImageBatchLoader:
             except Exception:
                 continue
 
-        return sorted(images)
+        return sorted(
+            images,
+            key=lambda p: [
+                int(part) if part.isdigit() else part.lower()
+                for part in re.split(r"(\d+)", os.path.basename(p))
+            ],
+        )
 
     def load_batch_images(
         self,
@@ -242,6 +280,7 @@ class ImageBatchLoader:
         subfolder=False,
         start_index=0,
         end_index=-1,
+        reset_on_queue=1,
         node_id=None,
     ):
         # Ensure directory is scanned once and cached
@@ -334,6 +373,10 @@ class ImageBatchLoader:
             start_index,
             end_index,
         )
+
+        if self._last_reset_on_queue.get(search_key) != reset_on_queue:
+            self.search_states[search_key] = 0
+        self._last_reset_on_queue[search_key] = reset_on_queue
 
         if mode == "single_image":
             image, filename = self.load_image_by_index(search_key, filtered_images)
