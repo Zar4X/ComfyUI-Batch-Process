@@ -1,0 +1,14 @@
+[project]
+name = "batch-process"
+description = "A collection of nodes for batch processing texts, images, videos, and LoRAs in ComfyUI"
+version = "1.2.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/Zar4X/ComfyUI-Batch-Process"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "zar4x"
+DisplayName = "ComfyUI-Batch-Process"
+Icon = ""
