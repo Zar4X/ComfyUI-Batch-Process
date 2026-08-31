@@ -2,45 +2,6 @@
 
 A collection of ComfyUI nodes for batch processing text, images, videos, LoRAs, masks, and 3D models.
 
-## Core Features
-
-### Text Processing
-
-- Load TXT files sequentially or randomly
-- Filter by filename, prefix, suffix, or file contents
-- Select a 1-based file range
-- Modify complete strings, prefixes, or suffixes
-- Use the selected TXT filename in save filename templates
-
-### Image Processing
-
-- Load images sequentially or randomly
-- Filter by filename and optionally scan subfolders
-- Return one image, a combined image batch, or an image list
-- Center-pad different resolutions when building a batch
-- Save PNG, JPG, WebP, BMP, TIFF, and GIF files
-- Save matching TXT captions and append animation frames
-
-### Video Processing
-
-- Save ComfyUI `VIDEO` objects in supported containers and codecs
-- Preserve available source FPS
-- Save matching TXT captions and workflow metadata
-
-### LoRA Processing
-
-- Load LoRAs sequentially or randomly
-- Filter by filename, prefix, or suffix
-- Apply separate model and CLIP strengths
-
-### General, Mask, and 3D Processing
-
-- Group compatible images, latents, values, `MESH`, and `File3D` objects
-- Filter out stale asset slots left over from previous runs
-- Select, repeat, copy, and combine mask batches
-- Save and preview batches of `MESH`, `File3D`, and supported 3D files
-- Save optional TXT captions next to 3D models
-
 ## Installation
 
 Clone the repository into the ComfyUI `custom_nodes` directory:
@@ -93,17 +54,9 @@ Combines compatible values into a batch. Supports image tensors, tensor lists, l
 
 ### Asset Filter
 
-Removes stale asset slots that ComfyUI keeps from previous runs. Connect reference images (`IMAGE`) and videos (any payload, e.g. `VHS_LoadVideo` output) — the input list grows automatically when the last free slot is connected, with image slots grouped above video slots. Each zone stops growing once it has one input per matching output (9 images, 3 videos), since an input past the last output would have nowhere to go.
+Filters out stale asset slots that ComfyUI keeps from previous runs. Each slot is traced upstream to its source filename: changed names pass, unchanged names are dropped. The first run falls back to the `freshness_hours` (default 24) mtime window, a pure re-run reuses the previous selection, and if everything would be dropped all slots pass as a fallback. Inputs grow as you connect them, capped at 9 images / 3 videos, with image slots grouped above video slots.
 
-Each slot is traced upstream to its source filename. A slot passes when its filename changed since this node last ran; unchanged slots are filtered out. Special cases: the very first run (no saved state) falls back to file modification time within `freshness_hours` (default 24), a re-run where nothing changed reuses the previous run's selection, and slots that are not file-backed (produced by the current run) always pass. If every connected asset would be filtered, all of them pass through as a fallback and a warning is printed.
-
-**Outputs:** `image_0`..`image_8`, `video_0`..`video_2`, plus `image_count` and `video_count`. Slot indices are 0-based so they line up one-to-one with consumers like MiniMax H3 (`image_0` -> `ref_image_0`, and so on).
-
-Outputs mirror the inputs positionally: input `image_N` always leaves on output `image_N`, so a slot's identity never shifts and a preview wired to one slot cannot start showing another slot's image. Each output carries a single asset at its original resolution — nothing is batched, so no black-border padding is ever added. Outputs whose input was filtered out (or is unconnected) return `None`.
-
-Wire `image_0`..`image_8` into a reference consumer's fixed slots once (for example MiniMax H3's `ref_image_0..8` / `ref_video_0..2`) and leave them wired. Such consumers skip `None` slots, so the consumer runs exactly once with only the surviving assets no matter how many survive, and gaps in the middle are harmless.
-
-`None` will, however, crash consumers that do not tolerate it — `PreviewImage` and `SaveImage` among them. Feed those from a slot you know is populated, or gate them on `image_count`.
+**Outputs:** `image_0`..`image_8`, `video_0`..`video_2`, `image_count`, `video_count`. Indices are 0-based so they line up one-to-one with MiniMax H3 (`image_0` -> `ref_image_0`). Outputs mirror inputs positionally and each carries a single asset at its original resolution (no batching, no padding); filtered or unconnected slots emit `None`. Wire every output into a reference consumer once and leave it wired — it skips `None` and runs once with the survivors. Consumers that do not tolerate `None` (`PreviewImage`, `SaveImage`) would crash; feed those from a slot you know is populated.
 
 ### 3D Model Batch Saver
 
@@ -136,7 +89,7 @@ For `forest_scene.txt` and seed `197152849854180`, the resolved prefix is:
 D_forest_scene_197152849854180
 ```
 
-The placeholder uses the node's `Node name for S&R` value. Custom names are supported, for example `%Text Source.filename%`. The TXT Batch Loader must participate in the current execution path before the saver runs.
+The node name may be the class type (`TXTBatchLoader`), the display name, the workflow title, or the node's `Node name for S&R` value — for example `%Text Source.filename%`. The placeholder resolves when the loader runs in the same prompt as the saver; if ComfyUI reuses the loader's cached output instead, the most recently recorded filename is used.
 
 ## Common Index Rules
 
