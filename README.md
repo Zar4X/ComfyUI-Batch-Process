@@ -105,4 +105,4 @@ The node name may be the class type (`TXTBatchLoader`), the display name, the wo
 - PyTorch 2.0 or newer
 - Codecs required by the selected video format
 
-Current package version: `1.2.0`
+Current package version: `1.2.1`

@@ -10,9 +10,6 @@ from .nodes.lora_batch_process import LoraBatchLoader
 from .nodes.video_batch_process import VideoBatchSaver  # type: ignore
 from .nodes.any_batch_process import AnyBatchGroup, AssetFilter
 from .nodes.model3d_batch_process import Model3DBatchSaver, Model3DBatchPreview
-from .nodes.runtime_filename_format import install_runtime_filename_substitution
-
-install_runtime_filename_substitution()
 
 WEB_DIRECTORY = "./web"
 

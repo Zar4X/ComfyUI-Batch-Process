@@ -70,6 +70,7 @@ def record_runtime_output(
     prompt_id=None,
 ):
     """Record a node output so a saver can reference it in the same prompt."""
+    install_runtime_filename_substitution()
     aliases = {str(node_type)}
     if display_name:
         aliases.add(str(display_name))
@@ -99,6 +100,7 @@ def replace_runtime_placeholders(text, prompt_id=None):
     if not isinstance(text, str) or "%" not in text:
         return text
 
+    install_runtime_filename_substitution()
     resolved_prompt_id = prompt_id if prompt_id is not None else _current_prompt_id()
     with _LOCK:
         values = {}
@@ -120,7 +122,11 @@ def replace_runtime_placeholders(text, prompt_id=None):
 
 
 def install_runtime_filename_substitution():
-    """Install the lightweight hook used by all ComfyUI saver nodes."""
+    """Install the lightweight hook used by all ComfyUI saver nodes.
+
+    Called lazily from record/replace instead of at import time, so loading
+    this package never modifies the host application by itself.
+    """
     try:
         import folder_paths
     except ImportError:
